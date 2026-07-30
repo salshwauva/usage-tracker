@@ -1,5 +1,5 @@
 import SwiftUI
-import LedgerCore
+import UsageTrackerCore
 
 struct ServiceRowView: View {
     let service: ServiceID

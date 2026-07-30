@@ -1,4 +1,4 @@
-name: Ledger
+name: UsageTracker
 
 options:
   bundleIdPrefix: com.pixybyteco
@@ -18,51 +18,51 @@ settings:
     DEVELOPMENT_TEAM: ""
 
 targets:
-  LedgerCore:
+  UsageTrackerCore:
     type: library.static
     platform: macOS
     sources:
-      - Sources/LedgerCore
+      - Sources/UsageTrackerCore
     settings:
       base:
         DEFINES_MODULE: YES
 
-  Ledger:
+  UsageTracker:
     type: application
     platform: macOS
     sources:
-      - Sources/Ledger
+      - Sources/UsageTracker
     dependencies:
-      - target: LedgerCore
+      - target: UsageTrackerCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.ledger
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.usagetracker
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ENABLE_APP_SANDBOX: NO
         COMBINE_HIDPI_IMAGES: YES
 
-  LedgerCoreTests:
+  UsageTrackerCoreTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - Tests/LedgerCoreTests
+      - Tests/UsageTrackerCoreTests
     dependencies:
-      - target: LedgerCore
+      - target: UsageTrackerCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.ledger.coretests
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.usagetracker.coretests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
-  Ledger:
+  UsageTracker:
     build:
       targets:
-        Ledger: all
-        LedgerCoreTests: [test]
+        UsageTracker: all
+        UsageTrackerCoreTests: [test]
     run:
       config: Debug
     test:
       targets:
-        - LedgerCoreTests
+        - UsageTrackerCoreTests

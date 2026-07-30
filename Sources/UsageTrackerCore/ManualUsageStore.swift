@@ -2,13 +2,13 @@ import Foundation
 
 /// Persists Sophia's own manual readings of consumer subscription usage caps
 /// (Claude.ai Pro/Max, ChatGPT Plus, Grok/X Premium). None of these expose usage via a
-/// public API — the number only exists in each service's own web UI — so Ledger tracks
+/// public API — the number only exists in each service's own web UI — so Usage Tracker tracks
 /// whatever she last typed in, timestamped, rather than polling anything.
 public final class ManualUsageStore {
     public static let shared = ManualUsageStore()
 
     private let defaults: UserDefaults
-    private let keyPrefix = "ledger.manualUsage."
+    private let keyPrefix = "usagetracker.manualUsage."
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

@@ -3,7 +3,7 @@ import Security
 
 /// Stores API keys in the user's login Keychain, one item per service.
 public struct KeychainStore {
-    private let service = "com.pixybyteco.ledger.apikey"
+    private let service = "com.pixybyteco.usagetracker.apikey"
 
     public init() {}
 

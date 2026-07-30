@@ -1,6 +1,6 @@
 # Project context
 
-Ledger is a macOS menu bar app (SwiftUI, MenuBarExtra) that shows usage
+Usage Tracker is a macOS menu bar app (SwiftUI, MenuBarExtra) that shows usage
 credits across AI services: Anthropic, OpenAI, and xAI API billing spend
 (pulled from each provider's official admin usage/cost API), plus Claude.ai,
 ChatGPT, and Grok subscription usage caps (manually entered — none of those
@@ -21,7 +21,7 @@ unless explicitly asked — this is a menu bar app, not a universal app.
 
 # Architectural rules
 
-- LedgerCore has no SwiftUI imports and no UI code. Everything network- or
+- UsageTrackerCore has no SwiftUI imports and no UI code. Everything network- or
   storage-related lives there so it's independently testable.
 - One `UsageProvider` per API-billing service (Anthropic, OpenAI, xAI). Each
   provider owns its own request/response types privately — no shared

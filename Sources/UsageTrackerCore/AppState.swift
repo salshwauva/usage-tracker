@@ -53,11 +53,11 @@ public final class AppState: ObservableObject {
     }
 
     public func setMonthlyBudget(_ budget: Double?, for id: ServiceID) {
-        UserDefaults.standard.set(budget, forKey: "ledger.budget.\(id.rawValue)")
+        UserDefaults.standard.set(budget, forKey: "usagetracker.budget.\(id.rawValue)")
     }
 
     public func monthlyBudget(for id: ServiceID) -> Double? {
-        let value = UserDefaults.standard.double(forKey: "ledger.budget.\(id.rawValue)")
+        let value = UserDefaults.standard.double(forKey: "usagetracker.budget.\(id.rawValue)")
         return value > 0 ? value : nil
     }
 

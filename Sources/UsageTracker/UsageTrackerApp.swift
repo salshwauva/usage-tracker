@@ -1,8 +1,8 @@
 import SwiftUI
-import LedgerCore
+import UsageTrackerCore
 
 @main
-struct LedgerApp: App {
+struct UsageTrackerApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {

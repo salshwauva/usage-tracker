@@ -5,7 +5,7 @@ import Foundation
 /// Requires an Admin API key (`sk-ant-admin...`), not a regular API key — cost/usage
 /// reporting is org-admin scoped. There is no API-exposed spending "limit"; any spending
 /// cap Sophia has configured in the Anthropic Console is not readable via API, so `limit`
-/// here is whatever budget she sets locally in Ledger's settings, not a value from Anthropic.
+/// here is whatever budget she sets locally in Usage Tracker's settings, not a value from Anthropic.
 ///
 /// Endpoint shape is per Anthropic's Admin API usage & cost docs as of this writing
 /// (`GET /v1/organizations/cost_report`). Anthropic can revise this API; verify against

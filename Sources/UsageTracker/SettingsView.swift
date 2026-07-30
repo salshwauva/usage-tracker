@@ -1,5 +1,5 @@
 import SwiftUI
-import LedgerCore
+import UsageTrackerCore
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState

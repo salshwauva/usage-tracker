@@ -1,5 +1,5 @@
 import SwiftUI
-import LedgerCore
+import UsageTrackerCore
 
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
@@ -36,7 +36,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack {
-            Text("Ledger")
+            Text("UsageTracker")
                 .font(.headline)
             Spacer()
         }

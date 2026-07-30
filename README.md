@@ -1,4 +1,4 @@
-# Ledger
+# Usage Tracker
 
 A menu bar app that tracks AI usage credits in one place: Anthropic, OpenAI,
 and xAI API spend, plus Claude.ai, ChatGPT, and Grok subscription usage.
@@ -20,7 +20,7 @@ same access:
   Anthropic and OpenAI. xAI has no published usage endpoint yet, so that
   provider only confirms the key is valid.
 - **Subscription caps** (Claude.ai, ChatGPT, Grok/X Premium): none of these
-  expose usage via a public API. Ledger stores whatever you last typed into
+  expose usage via a public API. Usage Tracker stores whatever you last typed into
   Settings, timestamped, rather than pretending to poll something that
   doesn't exist.
 
@@ -38,19 +38,19 @@ locally in Settings, not a value read from the provider.
 
 ```
 xcodegen generate
-open Ledger.xcodeproj
+open UsageTracker.xcodeproj
 ```
 
 Or from the command line:
 
 ```
 xcodegen generate
-xcodebuild -project Ledger.xcodeproj -scheme Ledger -configuration Debug build
+xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug build
 ```
 
 ## Structure
 
-- `Sources/LedgerCore` — models, Keychain-backed API key storage, usage
+- `Sources/UsageTrackerCore` — models, Keychain-backed API key storage, usage
   providers, the manual-entry store, and the `AppState` orchestrator.
-- `Sources/Ledger` — the SwiftUI menu bar app: popover content and settings.
+- `Sources/UsageTracker` — the SwiftUI menu bar app: popover content and settings.
 - `docs/decisions/` — ADRs for choices worth a paper trail.

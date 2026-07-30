@@ -1,5 +1,5 @@
 import XCTest
-@testable import LedgerCore
+@testable import UsageTrackerCore
 
 final class UsageSnapshotTests: XCTestCase {
     func testFractionClampsAtOne() {
