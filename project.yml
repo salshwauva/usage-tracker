@@ -1,0 +1,68 @@
+name: Ledger
+
+options:
+  bundleIdPrefix: com.pixybyteco
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: NO
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  LedgerCore:
+    type: library.static
+    platform: macOS
+    sources:
+      - Sources/LedgerCore
+    settings:
+      base:
+        DEFINES_MODULE: YES
+
+  Ledger:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/Ledger
+    dependencies:
+      - target: LedgerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.ledger
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ENABLE_APP_SANDBOX: NO
+        COMBINE_HIDPI_IMAGES: YES
+
+  LedgerCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/LedgerCoreTests
+    dependencies:
+      - target: LedgerCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.ledger.coretests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Ledger:
+    build:
+      targets:
+        Ledger: all
+        LedgerCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      targets:
+        - LedgerCoreTests
