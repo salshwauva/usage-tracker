@@ -39,6 +39,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pixybyteco.usagetracker
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: "Usage Tracker reads the front browser tab so Claude, ChatGPT, Grok, Gemini, and similar sites count toward your week."
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ENABLE_APP_SANDBOX: NO
         COMBINE_HIDPI_IMAGES: YES

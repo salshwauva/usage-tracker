@@ -1,18 +1,19 @@
 # Project context
 
-Usage Tracker is a macOS menu bar app (SwiftUI, MenuBarExtra) that shows usage
-credits across AI services: Anthropic, OpenAI, and xAI API billing spend
-(pulled from each provider's official admin usage/cost API), plus Claude.ai,
-ChatGPT, and Grok subscription usage caps (manually entered — none of those
-three expose usage via a public API).
+Usage Tracker is a macOS menu bar app (SwiftUI, MenuBarExtra) that shows a
+personal weekly hour budget (default 5h) as a five-petal bloom, broken down
+by subscription. Time is live: it accrues while a matched desktop app is
+frontmost, or while a browser tab host matches the catalog. There are no
+API keys, no usage-bar scraping, and no manual logging. A new vendor is a
+bundle id and/or URL host on the service, not a new network client.
 
 # Stack
 
 - Swift 5, SwiftUI, Combine
 - XcodeGen for project generation (project.yml is the source of truth, not
   the generated .xcodeproj)
-- No third-party dependencies. URLSession for networking, Keychain Services
-  for API key storage, UserDefaults for manual-entry persistence.
+- No third-party dependencies. UserDefaults JSON for the weekly log and
+  subscription readings. No Keychain. No network.
 
 # Target platform
 
@@ -21,19 +22,19 @@ unless explicitly asked — this is a menu bar app, not a universal app.
 
 # Architectural rules
 
-- UsageTrackerCore has no SwiftUI imports and no UI code. Everything network- or
-  storage-related lives there so it's independently testable.
-- One `UsageProvider` per API-billing service (Anthropic, OpenAI, xAI). Each
-  provider owns its own request/response types privately — no shared
-  "generic API response" abstraction across providers, since the three APIs
-  don't actually share a shape.
-- Subscription-cap services (Claude.ai, ChatGPT, Grok) never get a network
-  provider. They only ever read from `ManualUsageStore`. Don't add
-  cookie/session scraping for these — fragile, ToS-risky, and not what this
-  app is for.
-- API keys live only in Keychain, never in UserDefaults, never logged.
-- `AppState` is the single `ObservableObject` the UI touches. Views don't
-  call providers or the Keychain store directly.
+- UsageTrackerCore has no SwiftUI imports and no UI code. Models, catalog,
+  week math, and persistence live there so they're independently testable.
+- Do not add API keys, usage endpoints, or cookie/session scraping. Time
+  comes from `ActivityRouter` (bundle id + URL host). `ActivityMonitor` in
+  the app target owns NSWorkspace / AppleScript / idle; Core stays testable.
+- Service identity is a string id, never a closed enum of vendors. Built-in
+  catalog + custom services. `Catalog.merge` must keep working when a new
+  built-in is added later.
+- Meter kind is stored as a raw string. Unknown future kinds resolve to a
+  generic used/limit editor (`count`). Do not crash on decode.
+- Models are family names (Opus, GPT, Grok), not dated SKUs.
+- Rows are this week's live time per service, not a vendor usage bar.
+- `AppState` is the single `ObservableObject` the UI touches.
 
 # Conventions
 
@@ -67,10 +68,9 @@ not just to ship.
    describe what's needed, point me at the file, review my attempt.
 7. Check my understanding on load-bearing concepts with an occasional
    question.
-8. Be concrete about uncertainty — if you're unsure an API exists or a flag
-   is right, say so and suggest we verify rather than guess. This matters
-   more than usual here: the Anthropic/OpenAI usage endpoints in this repo
-   were written from memory of their docs, not tested against real keys.
+8. Be concrete about uncertainty — if you're unsure a vendor still meters
+   a certain way, say so. The meter kind is the escape hatch; don't guess
+   a live API.
 9. Keep a learning log: append a dated 2-4 bullet summary to
    docs/learning-log.md each session (gitignored).
 
@@ -96,19 +96,11 @@ I use you as a tool; the repo should read as my work. Follow strictly:
 
 # Anti-patterns — do not write code that does any of these
 
-- Never fabricate a usage/cost API endpoint or response shape with false
-  confidence. Anthropic and OpenAI both gate usage reporting behind
-  admin-scoped keys and can change these endpoints; if a request starts
-  failing, say so and point at the docs rather than silently patching in a
-  guess.
-- Never implement session-cookie or browser-automation scraping of claude.ai,
-  chatgpt.com, or grok/X to pull subscription usage. That's account
-  automation against a consumer product's ToS, not an API integration —
-  manual entry is the intended mechanism for these three services.
-- Never treat "spend" and "limit" as both API-sourced for Anthropic/OpenAI.
-  Only spend comes from the API; limit is always a locally-set budget. Don't
-  blur that distinction in UI copy or code comments.
-- Never store an API key anywhere but Keychain (no UserDefaults, no plist,
-  no logging it even at debug level).
-- Never add a retry loop around a 401/403 from a usage endpoint — that means
-  the key isn't admin-scoped, not that the request should be retried.
+- Never add API-key or scraping paths for subscription usage. Manual entry
+  is the mechanism. If a vendor later publishes a real usage API, that is a
+  new, explicit feature, not a silent add.
+- Never encode a vendor's current meter as the only way that row can work.
+  New kinds belong on `MeterKind` plus a Settings editor, not a rewrite of
+  the service list.
+- Never key persistence on a Swift enum of vendors. String ids only.
+- Never treat weekly hours and a vendor usage bar as the same number.
