@@ -3,111 +3,218 @@ import Combine
 
 @MainActor
 public final class AppState: ObservableObject {
-    @Published public private(set) var statuses: [ServiceID: ServiceStatus] = [:]
-    @Published public var refreshIntervalMinutes: Int {
-        didSet { scheduleTimer() }
+    @Published public private(set) var services: [Service]
+    @Published public private(set) var entries: [TimeEntry]
+    @Published public var weeklyBudgetHours: Double {
+        didSet { persistThrottled(now: Date(), force: true) }
+    }
+    @Published public var firstWeekday: Int {
+        didSet { persistThrottled(now: Date(), force: true) }
+    }
+    @Published public var idleSeconds: Double {
+        didSet { persistThrottled(now: Date(), force: true) }
+    }
+    @Published public private(set) var sessionStartedAt: Date?
+    @Published public private(set) var sessionServiceID: String?
+    @Published public private(set) var isIdle: Bool = false
+    @Published public private(set) var lastMatchedName: String?
+
+    private var lastSampleAt: Date?
+    private var lastPersistAt: Date = .distantPast
+
+    private let store: PersistenceStore
+    private let calendar: Calendar
+
+    public init(
+        store: PersistenceStore = .shared,
+        calendar: Calendar = .current
+    ) {
+        self.store = store
+        self.calendar = calendar
+        let loaded = store.load()
+        self.services = loaded.services
+        self.entries = loaded.entries
+        self.weeklyBudgetHours = loaded.weeklyBudgetHours
+        self.firstWeekday = loaded.firstWeekday
+        self.idleSeconds = loaded.idleSeconds
+        self.sessionStartedAt = loaded.sessionStartedAt
+        self.sessionServiceID = loaded.sessionServiceID
+        self.lastSampleAt = loaded.lastSampleAt
+        recoverInterruptedSession()
     }
 
-    private let keychain = KeychainStore()
-    private let manualStore = ManualUsageStore.shared
-    private let apiProviders: [ServiceID: UsageProvider]
-    private var timer: Timer?
-
-    public init(refreshIntervalMinutes: Int = 15) {
-        self.refreshIntervalMinutes = refreshIntervalMinutes
-        self.apiProviders = [
-            ServiceID.anthropicAPI: AnthropicUsageProvider(),
-            ServiceID.openAIAPI: OpenAIUsageProvider(),
-            ServiceID.xaiAPI: XAIUsageProvider(),
-        ]
-        for id in ServiceID.allCases {
-            statuses[id] = ServiceStatus(service: id, isConfigured: isConfigured(id))
-        }
-        loadManualSnapshots()
-        scheduleTimer()
+    public var enabledServices: [Service] {
+        services.filter(\.enabled)
     }
 
-    public func isConfigured(_ id: ServiceID) -> Bool {
-        switch id.kind {
-        case .apiBilling:
-            return (keychain.key(for: id)?.isEmpty == false)
-        case .subscriptionCap:
-            return manualStore.snapshot(for: id) != nil
-        }
+    public var isWatching: Bool {
+        sessionStartedAt != nil && !isIdle
     }
 
-    public func setAPIKey(_ key: String, for id: ServiceID) {
-        keychain.setKey(key, for: id)
-        statuses[id]?.isConfigured = isConfigured(id)
+    public var watchingName: String? {
+        guard isWatching, let id = sessionServiceID else { return lastMatchedName }
+        return service(id: id)?.displayName
     }
 
-    public func apiKey(for id: ServiceID) -> String {
-        keychain.key(for: id) ?? ""
+    public func weekWindow(now: Date = Date()) -> WeekWindow {
+        WeekWindow.containing(now, calendar: calendar, firstWeekday: firstWeekday)
     }
 
-    public func setManualUsage(used: Double, limit: Double?, unit: String, for id: ServiceID) {
-        manualStore.record(used: used, limit: limit, unit: unit, for: id)
-        statuses[id]?.snapshot = manualStore.snapshot(for: id)
-        statuses[id]?.isConfigured = true
-        statuses[id]?.error = nil
+    public func budget(now: Date = Date()) -> WeeklyBudget {
+        WeeklyBudget(
+            hoursLimit: weeklyBudgetHours,
+            hoursUsed: hoursUsed(now: now)
+        )
     }
 
-    public func setMonthlyBudget(_ budget: Double?, for id: ServiceID) {
-        UserDefaults.standard.set(budget, forKey: "usagetracker.budget.\(id.rawValue)")
+    public func hoursUsed(now: Date = Date(), serviceID: String? = nil) -> Double {
+        let window = weekWindow(now: now)
+        return WeeklyBudgetMath.hoursUsed(
+            entries: entries,
+            sessionStartedAt: sessionStartedAt,
+            sessionServiceID: sessionServiceID,
+            now: now,
+            window: window,
+            serviceID: serviceID
+        )
     }
 
-    public func monthlyBudget(for id: ServiceID) -> Double? {
-        let value = UserDefaults.standard.double(forKey: "usagetracker.budget.\(id.rawValue)")
-        return value > 0 ? value : nil
+    public func entriesThisWeek(now: Date = Date()) -> [TimeEntry] {
+        let window = weekWindow(now: now)
+        return entries
+            .filter { window.contains($0.startedAt) }
+            .sorted { $0.startedAt > $1.startedAt }
     }
 
-    private func loadManualSnapshots() {
-        for id in ServiceID.allCases where id.kind == .subscriptionCap {
-            statuses[id]?.snapshot = manualStore.snapshot(for: id)
-        }
-    }
+    /// Called by ActivityMonitor. `ownBundle` means the menu bar popover is frontmost; keep counting the previous surface.
+    public func ingest(sample: SurfaceSample?, idle: Bool, now: Date = Date(), ownBundle: Bool = false) {
+        if ownBundle { return }
 
-    public func refreshAll() {
-        for id in ServiceID.allCases where id.kind == .apiBilling {
-            refresh(id)
-        }
-    }
-
-    public func refresh(_ id: ServiceID) {
-        guard id.kind == .apiBilling, let provider = apiProviders[id] else { return }
-        let key = keychain.key(for: id) ?? ""
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let budget = self.monthlyBudget(for: id)
-                let providerWithBudget = self.budgetedProvider(provider, budget: budget)
-                let snapshot = try await providerWithBudget.fetchUsage(apiKey: key)
-                await MainActor.run {
-                    self.statuses[id]?.snapshot = snapshot
-                    self.statuses[id]?.error = nil
-                }
-            } catch {
-                await MainActor.run {
-                    self.statuses[id]?.error = error.localizedDescription
-                }
+        if idle {
+            if sessionStartedAt != nil {
+                flushSession(at: lastSampleAt ?? now)
             }
+            isIdle = true
+            lastMatchedName = nil
+            persistThrottled(now: now, force: true)
+            return
+        }
+
+        isIdle = false
+        let matchedID = sample.flatMap { ActivityRouter.match(sample: $0, services: services) }
+        lastMatchedName = matchedID.flatMap { service(id: $0)?.displayName }
+
+        if matchedID == sessionServiceID, sessionStartedAt != nil {
+            lastSampleAt = now
+            persistThrottled(now: now, force: false)
+            return
+        }
+
+        flushSession(at: now)
+        if let matchedID {
+            sessionStartedAt = now
+            sessionServiceID = matchedID
+            lastSampleAt = now
+        }
+        persistThrottled(now: now, force: true)
+    }
+
+    public func flushForQuit(now: Date = Date()) {
+        flushSession(at: now)
+        persistThrottled(now: now, force: true)
+    }
+
+    public func recoverInterruptedSession() {
+        guard let start = sessionStartedAt else { return }
+        let end = lastSampleAt ?? start
+        let minutes = end.timeIntervalSince(start) / 60
+        sessionStartedAt = nil
+        let serviceID = sessionServiceID
+        sessionServiceID = nil
+        lastSampleAt = nil
+        if minutes >= 0.25 {
+            entries.append(TimeEntry(startedAt: start, minutes: minutes, serviceID: serviceID))
+        }
+        persistThrottled(now: Date(), force: true)
+    }
+
+    public func removeEntry(_ id: UUID) {
+        entries.removeAll { $0.id == id }
+        persistThrottled(now: Date(), force: true)
+    }
+
+    public func setEnabled(_ enabled: Bool, for id: String) {
+        updateService(id) { $0.enabled = enabled }
+    }
+
+    public func updateModels(_ models: [String], for id: String) {
+        updateService(id) { $0.models = models }
+    }
+
+    public func updateSources(bundleIDs: [String], urlHosts: [String], for id: String) {
+        updateService(id) {
+            $0.bundleIDs = bundleIDs
+            $0.urlHosts = urlHosts
         }
     }
 
-    private func budgetedProvider(_ provider: UsageProvider, budget: Double?) -> UsageProvider {
-        switch provider.service {
-        case .anthropicAPI: return AnthropicUsageProvider(monthlyBudgetUSD: budget)
-        case .openAIAPI: return OpenAIUsageProvider(monthlyBudgetUSD: budget)
-        default: return provider
+    public func rename(_ name: String, vendor: String, for id: String) {
+        updateService(id) {
+            $0.displayName = name
+            $0.vendor = vendor
         }
     }
 
-    private func scheduleTimer() {
-        timer?.invalidate()
-        let interval = TimeInterval(max(refreshIntervalMinutes, 1) * 60)
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshAll() }
+    public func addCustom(name: String, vendor: String, bundleIDs: [String], urlHosts: [String]) {
+        services.append(Catalog.makeCustom(name: name, vendor: vendor, bundleIDs: bundleIDs, urlHosts: urlHosts))
+        persistThrottled(now: Date(), force: true)
+    }
+
+    public func removeService(_ id: String) {
+        guard let index = services.firstIndex(where: { $0.id == id }) else { return }
+        guard !services[index].isBuiltIn else { return }
+        services.remove(at: index)
+        persistThrottled(now: Date(), force: true)
+    }
+
+    public func service(id: String) -> Service? {
+        services.first { $0.id == id }
+    }
+
+    private func flushSession(at date: Date) {
+        guard let start = sessionStartedAt else { return }
+        let end = min(date, lastSampleAt ?? date)
+        let minutes = end.timeIntervalSince(start) / 60
+        let serviceID = sessionServiceID
+        sessionStartedAt = nil
+        sessionServiceID = nil
+        lastSampleAt = nil
+        if minutes >= 0.15 {
+            entries.append(TimeEntry(startedAt: start, minutes: minutes, serviceID: serviceID))
         }
-        refreshAll()
+    }
+
+    private func updateService(_ id: String, mutate: (inout Service) -> Void) {
+        guard let index = services.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&services[index])
+        persistThrottled(now: Date(), force: true)
+    }
+
+    private func persistThrottled(now: Date, force: Bool) {
+        if !force, now.timeIntervalSince(lastPersistAt) < 15 { return }
+        lastPersistAt = now
+        store.save(
+            PersistedState(
+                schemaVersion: PersistedState.currentSchema,
+                weeklyBudgetHours: weeklyBudgetHours,
+                firstWeekday: firstWeekday,
+                entries: entries,
+                services: services,
+                sessionStartedAt: sessionStartedAt,
+                sessionServiceID: sessionServiceID,
+                lastSampleAt: lastSampleAt,
+                idleSeconds: idleSeconds
+            )
+        )
     }
 }
