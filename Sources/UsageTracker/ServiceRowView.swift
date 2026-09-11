@@ -2,56 +2,59 @@ import SwiftUI
 import UsageTrackerCore
 
 struct ServiceRowView: View {
-    let service: ServiceID
-    let status: ServiceStatus?
+    let service: Service
+    let hoursUsed: Double
+    let budgetHours: Double
+    let isLive: Bool
+
+    @Environment(\.palette) private var palette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(service.displayName)
-                    .font(.subheadline)
-                Spacer()
-                Text(valueText)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: Space.tight) {
+            MiniBloom(
+                fraction: budgetHours > 0 ? min(hoursUsed / budgetHours, 1) : 0,
+                over: hoursUsed > budgetHours && budgetHours > 0
+            )
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(service.displayName)
+                        .font(Typeface.ui(13, weight: .medium))
+                        .foregroundStyle(palette.bark)
+                        .lineLimit(1)
+                    if isLive {
+                        Text("now")
+                            .font(Typeface.label(9))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.over)
+                    }
+                }
+
+                if !service.models.isEmpty {
+                    Text(service.models.prefix(3).joined(separator: " · "))
+                        .font(Typeface.ui(10))
+                        .foregroundStyle(palette.muted)
+                        .lineLimit(1)
+                }
             }
 
-            if let fraction = status?.snapshot?.fraction {
-                ProgressView(value: fraction)
-            }
+            Spacer(minLength: 8)
 
-            if let error = status?.error {
-                Text(error)
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-            } else if status?.isConfigured != true {
-                Text("Not configured")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else if let fetchedAt = status?.snapshot?.fetchedAt {
-                Text(fetchedAt, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            Text(hoursUsed > 0.001 ? DurationFormat.longHours(hoursUsed) : "—")
+                .font(Typeface.ui(12, weight: .medium).monospacedDigit())
+                .foregroundStyle(hoursUsed > 0.001 ? palette.barkSoft : palette.muted)
         }
-        .padding(8)
-        .background(Color.gray.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, Space.row)
+        .padding(.vertical, 10)
+        .background(isLive ? palette.petalPale.opacity(0.55) : palette.row)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
     }
 
-    private var valueText: String {
-        guard let snapshot = status?.snapshot else { return "—" }
-        if snapshot.unit == "USD" {
-            let used = String(format: "$%.2f", snapshot.used)
-            if let limit = snapshot.limit {
-                return "\(used) / $\(String(format: "%.0f", limit))"
-            }
-            return used
-        }
-        if let limit = snapshot.limit {
-            return "\(Int(snapshot.used))\(snapshot.unit) / \(Int(limit))\(snapshot.unit)"
-        }
-        return "\(Int(snapshot.used))\(snapshot.unit)"
+    private var accessibilityText: String {
+        var text = "\(service.displayName), \(DurationFormat.longHours(hoursUsed)) this week"
+        if isLive { text += ", watching now" }
+        return text
     }
 }

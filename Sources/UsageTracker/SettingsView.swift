@@ -3,116 +3,194 @@ import UsageTrackerCore
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.colorScheme) private var scheme
+
+    private var palette: Palette { Palette.current(scheme) }
 
     var body: some View {
         TabView {
-            apiKeysTab
-                .tabItem { Text("API Keys") }
-            subscriptionsTab
+            weekTab
+                .tabItem { Text("Week") }
+            servicesTab
                 .tabItem { Text("Subscriptions") }
-            generalTab
-                .tabItem { Text("General") }
         }
-        .padding(20)
-        .frame(width: 420, height: 320)
+        .padding(Space.section)
+        .frame(width: 480, height: 440)
+        .background(palette.washi)
+        .environment(\.palette, palette)
     }
 
-    private var apiKeysTab: some View {
+    private var weekTab: some View {
         Form {
             Section {
-                Text("Admin/organization-scoped API keys. Regular project keys can't read usage.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Stepper(value: $appState.weeklyBudgetHours, in: 1...40, step: 0.5) {
+                    Text("Weekly budget  \(DurationFormat.longHours(appState.weeklyBudgetHours))")
+                }
+                Picker("Week starts", selection: $appState.firstWeekday) {
+                    Text("Monday").tag(2)
+                    Text("Sunday").tag(1)
+                }
+                Stepper(value: $appState.idleSeconds, in: 30...600, step: 15) {
+                    Text("Pause after \(Int(appState.idleSeconds))s idle")
+                }
             }
-            apiKeyRow(.anthropicAPI)
-            apiKeyRow(.openAIAPI)
-            apiKeyRow(.xaiAPI)
+
+            Section("This week") {
+                let entries = appState.entriesThisWeek()
+                if appState.isWatching, let name = appState.watchingName {
+                    Text("Watching \(name)")
+                }
+                if entries.isEmpty {
+                    Text("No tracked time yet. Open Claude, Cursor, ChatGPT, or a matched site.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(entries) { entry in
+                        HStack {
+                            Text(label(for: entry))
+                            Spacer()
+                            Text(DurationFormat.longHours(entry.hours))
+                                .monospacedDigit()
+                            Button("Remove", role: .destructive) {
+                                appState.removeEntry(entry.id)
+                            }
+                        }
+                    }
+                }
+            }
         }
-        .padding(.top, 8)
+        .formStyle(.grouped)
     }
 
-    private func apiKeyRow(_ id: ServiceID) -> some View {
-        APIKeyRow(service: id)
+    private var servicesTab: some View {
+        VStack(alignment: .leading, spacing: Space.tight) {
+            Text("Time counts while the desktop app is frontmost, or while a browser tab matches a host. Add a bundle id or host when a vendor ships a new app. No API keys.")
+                .font(Typeface.ui(11))
+                .foregroundStyle(palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            List {
+                ForEach(appState.services) { service in
+                    ServiceEditor(serviceID: service.id)
+                }
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+
+            AddCustomServiceRow()
+        }
     }
 
-    private var subscriptionsTab: some View {
-        Form {
-            Section {
-                Text("No service exposes subscription usage via API — enter what you see in each app's own usage indicator.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            ManualUsageRow(service: .claudeSubscription)
-            ManualUsageRow(service: .chatGPTSubscription)
-            ManualUsageRow(service: .grokSubscription)
+    private func label(for entry: TimeEntry) -> String {
+        if let id = entry.serviceID, let name = appState.service(id: id)?.displayName {
+            return name
         }
-        .padding(.top, 8)
-    }
-
-    private var generalTab: some View {
-        Form {
-            Stepper(value: $appState.refreshIntervalMinutes, in: 5...120, step: 5) {
-                Text("Refresh every \(appState.refreshIntervalMinutes) min")
-            }
-        }
-        .padding(.top, 8)
+        return "Unassigned"
     }
 }
 
-private struct APIKeyRow: View {
+private struct ServiceEditor: View {
     @EnvironmentObject private var appState: AppState
-    let service: ServiceID
-    @State private var key: String = ""
-    @State private var budgetText: String = ""
+    let serviceID: String
+
+    @State private var modelsText = ""
+    @State private var bundlesText = ""
+    @State private var hostsText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SecureField(service.displayName, text: $key)
-                .onSubmit { appState.setAPIKey(key, for: service) }
-            HStack {
-                Text("Monthly budget for the progress bar")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                TextField("USD", text: $budgetText)
-                    .frame(width: 70)
-                    .onSubmit {
-                        appState.setMonthlyBudget(Double(budgetText), for: service)
+        if let service = appState.service(id: serviceID) {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Models (comma separated)", text: $modelsText)
+                        .onSubmit { saveModels(service) }
+                    TextField("App bundle ids", text: $bundlesText)
+                        .onSubmit { saveSources(service) }
+                    TextField("Site hosts", text: $hostsText)
+                        .onSubmit { saveSources(service) }
+                    if !service.isBuiltIn {
+                        Button("Remove subscription", role: .destructive) {
+                            appState.removeService(service.id)
+                        }
                     }
+                }
+                .padding(.vertical, 4)
+            } label: {
+                Toggle(isOn: enabledBinding(service)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(service.displayName)
+                        Text(sourceCaption(service))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
             }
+            .onAppear { load(service) }
         }
-        .onAppear {
-            key = appState.apiKey(for: service)
-            if let budget = appState.monthlyBudget(for: service) {
-                budgetText = String(format: "%.0f", budget)
-            }
-        }
+    }
+
+    private func sourceCaption(_ service: Service) -> String {
+        let apps = service.bundleIDs.isEmpty ? [] : ["apps"]
+        let sites = service.urlHosts.prefix(3)
+        let parts = apps + sites
+        if parts.isEmpty { return service.vendor }
+        return ([service.vendor] + parts).joined(separator: " · ")
+    }
+
+    private func load(_ service: Service) {
+        modelsText = service.models.joined(separator: ", ")
+        bundlesText = service.bundleIDs.joined(separator: ", ")
+        hostsText = service.urlHosts.joined(separator: ", ")
+    }
+
+    private func saveModels(_ service: Service) {
+        appState.updateModels(csv(modelsText), for: service.id)
+    }
+
+    private func saveSources(_ service: Service) {
+        appState.updateSources(bundleIDs: csv(bundlesText), urlHosts: csv(hostsText), for: service.id)
+    }
+
+    private func csv(_ text: String) -> [String] {
+        text.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func enabledBinding(_ service: Service) -> Binding<Bool> {
+        Binding(
+            get: { appState.service(id: service.id)?.enabled ?? service.enabled },
+            set: { appState.setEnabled($0, for: service.id) }
+        )
     }
 }
 
-private struct ManualUsageRow: View {
+private struct AddCustomServiceRow: View {
     @EnvironmentObject private var appState: AppState
-    let service: ServiceID
-    @State private var usedText: String = ""
-    @State private var limitText: String = ""
+    @State private var name = ""
+    @State private var vendor = ""
+    @State private var bundle = ""
+    @State private var host = ""
 
     var body: some View {
         HStack {
-            Text(service.displayName)
-                .frame(width: 100, alignment: .leading)
-            TextField("used", text: $usedText)
-                .frame(width: 60)
-            Text("/")
-            TextField("limit", text: $limitText)
-                .frame(width: 60)
-            Button("Save") {
-                guard let used = Double(usedText) else { return }
-                appState.setManualUsage(used: used, limit: Double(limitText), unit: "", for: service)
-            }
-        }
-        .onAppear {
-            if let snapshot = appState.statuses[service]?.snapshot {
-                usedText = String(snapshot.used)
-                limitText = snapshot.limit.map { String($0) } ?? ""
+            TextField("New subscription", text: $name)
+            TextField("bundle.id", text: $bundle)
+                .frame(width: 120)
+            TextField("host.com", text: $host)
+                .frame(width: 100)
+            Button("Add") {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                appState.addCustom(
+                    name: trimmed,
+                    vendor: vendor,
+                    bundleIDs: bundle.isEmpty ? [] : [bundle.trimmingCharacters(in: .whitespaces)],
+                    urlHosts: host.isEmpty ? [] : [host.trimmingCharacters(in: .whitespaces)]
+                )
+                name = ""
+                vendor = ""
+                bundle = ""
+                host = ""
             }
         }
     }
