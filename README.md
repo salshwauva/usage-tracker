@@ -1,56 +1,77 @@
 # Usage Tracker
 
-A menu bar app that tracks AI usage credits in one place: Anthropic, OpenAI,
-and xAI API spend, plus Claude.ai, ChatGPT, and Grok subscription usage.
+Usage Tracker is a macOS menu bar app that measures time spent in AI apps and websites. It combines that activity into one weekly hour budget, with totals for each service.
 
-## Status
+A flower in the menu bar shows progress through the budget. The popover shows the current service and the week's time entries.
 
-First working build. Menu bar item, popover with per-service usage bars, and
-a settings window for API keys and manual subscription entries. Not yet
-tested against real API keys.
+## How time is counted
 
-## How usage data gets in
+The app checks the frontmost application every two seconds and when the active app changes. Desktop apps match by bundle identifier. Supported browser tabs match by URL host.
 
-Two different mechanisms, because the underlying services don't offer the
-same access:
+A match starts a session. A different app ends that session or starts one for another service. Idle detection pauses the count. The default idle threshold is 90 seconds.
 
-- **API billing** (Anthropic, OpenAI, xAI): pulled live from each provider's
-  official usage/cost API on a timer. Requires an admin/organization-scoped
-  API key, not a regular project key — usage reporting is admin-only on both
-  Anthropic and OpenAI. xAI has no published usage endpoint yet, so that
-  provider only confirms the key is valid.
-- **Subscription caps** (Claude.ai, ChatGPT, Grok/X Premium): none of these
-  expose usage via a public API. Usage Tracker stores whatever you last typed into
-  Settings, timestamped, rather than pretending to poll something that
-  doesn't exist.
+The default budget is five hours per week, with Monday as the first day. Settings can change the budget, first day, and idle threshold.
 
-None of the API-billing services expose a spending *limit* either — only
-spend. The "limit" shown next to API usage is a personal budget you set
-locally in Settings, not a value read from the provider.
+## Features
 
-## Requirements
+- Weekly time totals and totals for each service.
+- Automatic sessions for configured apps and supported browser tabs.
+- Built-in entries for services such as Claude, ChatGPT, Gemini, Grok, Cursor, and Perplexity.
+- Custom services with app identifiers and website hosts.
+- Local time entries, with recovery of interrupted sessions from the last saved sample.
 
-- macOS 14 or later
-- Xcode 16 or later
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+## Build and run
 
-## Building
+Requirements: macOS 14 or later, Xcode 16 or later, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
-```
+```sh
 xcodegen generate
 open UsageTracker.xcodeproj
 ```
 
-Or from the command line:
+Select the `UsageTracker` scheme in Xcode and run the app. The app appears in the menu bar.
 
-```
-xcodegen generate
+A command-line build uses:
+
+```sh
 xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug build
 ```
 
-## Structure
+## Browser access
 
-- `Sources/UsageTrackerCore` — models, Keychain-backed API key storage, usage
-  providers, the manual-entry store, and the `AppState` orchestrator.
-- `Sources/UsageTracker` — the SwiftUI menu bar app: popover content and settings.
-- `docs/decisions/` — ADRs for choices worth a paper trail.
+macOS requests Automation permission when the app reads a browser's active tab. The current implementation includes URL access for Chrome, Safari, Brave, Edge, Arc, and Comet.
+
+Browser support depends on AppleScript access. A denied permission prevents URL-based recognition in that browser. Some browser identifiers exist in the catalog without a URL adapter.
+
+## Data and privacy
+
+Time entries and settings stay in local `UserDefaults`. The app does not require provider API keys.
+
+The monitor reads the active app identifier and, for supported browsers, the active tab URL. It uses the host to match a service. Stored time entries contain a date, duration, and service identifier.
+
+The app does not collect prompt text or response text.
+
+## What the totals mean
+
+The totals measure foreground activity. They do not measure tokens, API spend, subscription credits, or a provider's usage limit.
+
+An app match can include work unrelated to an AI feature. For example, the built-in Copilot entry matches VS Code activity. Website host matches can include account and settings pages.
+
+Very short sessions may be omitted. Weekly totals assign an entry to the week in which the session started.
+
+## Tests
+
+```sh
+xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker test
+```
+
+The core tests cover service matches, weekly calculations, state, and persistence.
+
+## Source map
+
+| Path | Purpose |
+| --- | --- |
+| `Sources/UsageTracker/` | Menu bar app, activity monitor, and browser access |
+| `Sources/UsageTrackerCore/` | Service catalog, session state, weekly totals, and persistence |
+| `Tests/UsageTrackerCoreTests/` | Unit tests |
+| `project.yml` | XcodeGen project definition |
